@@ -1,9 +1,9 @@
-import React from "react";
-
-// Use require to avoid TypeScript treating the imported file as JSX when
-// the '--jsx' compiler option is not set.
-const Dashboard = require("./src/screens/Dashboard").default;
+import React from 'react';
+import HomeScreen from './src/screens/HomeScreen';
+// Importaremos o Dashboard novamente quando configurarmos a navegação
+// import Dashboard from './src/screens/Dashboard';
 
 export default function App() {
-  return React.createElement(Dashboard);
+  // Por enquanto, vamos renderizar apenas o HomeScreen para testar o scanner BLE
+  return <HomeScreen />;
 }
