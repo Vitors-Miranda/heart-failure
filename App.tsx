@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import HomeScreen from './src/screens/HomeScreen';
-// Importaremos o Dashboard novamente quando configurarmos a navegação
-// import Dashboard from './src/screens/Dashboard';
+import Dashboard from './src/screens/Dashboard';
 
 export default function App() {
-  // Por enquanto, vamos renderizar apenas o HomeScreen para testar o scanner BLE
-  return <HomeScreen />;
+  // Estado que controla qual tela está visível
+  const [currentScreen, setCurrentScreen] = useState<'Home' | 'Dashboard'>('Home');
+
+  // Renderização Condicional
+  if (currentScreen === 'Dashboard') {
+    return <Dashboard />;
+  }
+
+  // Passamos uma função como prop para o HomeScreen poder mudar a tela
+  return <HomeScreen onNavigateToDashboard={() => setCurrentScreen('Dashboard')} />;
 }

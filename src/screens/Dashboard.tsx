@@ -7,10 +7,11 @@ import {
   Text,
   ActivityIndicator,
   Button,
-  SafeAreaView,
   StyleSheet,
+  StatusBar,
+  Platform
 } from 'react-native';
-import { StatusBar } from 'react-native';
+import { io, Socket } from 'socket.io-client';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<{
@@ -27,87 +28,79 @@ export default function Dashboard() {
   
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState(false);
-  const [errorMessage, clearError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [isAnomalyDetected, setIsAnomalyDetected] = useState(false);
-  
-  let interval: any = null;
+  const [socket, setSocket] = useState<Socket | null>(null);
 
-  // Update the simulation every 2 seconds
-useEffect(() => {
-    // Se não estiver conectado, não faz nada
-    if (!isConnected) return;
-
-    // Encapsulamos toda a lógica dentro desta função que faltava
-    const runMockSimulation = () => {
-      const baseHR = 75;
-      const noise = (Math.random() * 10) - 5;
-        
-      let newMetrics = {
-        heartRateBPM: baseHR + noise,
-        temperatureCelsius: 36.5 + (Math.random() * 0.5 - 0.25),
-        movement: Math.random() * 15,
-        posture: 'Sitting'
-      };
-
-      if (Math.random() > 0.9) {
-        newMetrics.heartRateBPM = baseHR + 50 + noise;
-        newMetrics.movement = 1;
-        setIsAnomalyDetected(true);
-      } else if (Math.random() > 0.95) {
-        newMetrics.movement = 10;
-        setIsAnomalyDetected(false);
-      }
-
-      setMetrics(newMetrics);
+  // cleaning
+  useEffect(() => {
+    return () => {
+      if (socket) socket.disconnect();
     };
+  }, [socket]);
 
-    // Executa imediatamente a primeira vez
-    runMockSimulation();
-    
-    // Inicia o intervalo chamando a função a cada 2 segundos
-    const intervalId = setInterval(runMockSimulation, 2000);
-    
-    // Limpeza correta usando o ID gerado internamente
-    return () => clearInterval(intervalId);
-    
-  }, [isConnected]); // Removemos 'isAnomalyDetected' para o intervalo não reiniciar atoa
-
-  // Handle connection state
-  const handleConnect = async () => {
-    // Reset state
-    setMetrics({
-      heartRateBPM: null,
-      temperatureCelsius: null,
-      movement: null,
-      posture: null,
-    });
+  // node server connection logic
+  const handleConnect = () => {
+    // reset
+    setMetrics({ heartRateBPM: null, temperatureCelsius: null, movement: null, posture: null });
     setIsAnomalyDetected(false);
-    
-    // Simulate connection delay
+    setErrorMessage('');
     setIsConnecting(true);
-    setTimeout(() => {
-      setConnectionStatus(true);
+    
+    // connecting to the IP
+    const newSocket = io('http://10.110.10.57:3000', {
+      transports: ['websocket'], // Força o uso direto de websockets
+    });
+
+    // successful connection
+    newSocket.on('connect', () => {
       setIsConnected(true);
       setIsConnecting(false);
-      clearError('');
-    }, 1000);
+      setErrorMessage('');
+    });
+
+    // packet reception
+    newSocket.on('sensorData', (data) => {
+      setMetrics({
+        heartRateBPM: data.heartRateBPM,
+        temperatureCelsius: data.temperatureCelsius,
+        movement: data.movement,
+        posture: data.posture,
+      });
+
+      // anomaly detection logic (simplified for demo purposes)
+      if (data.posture === 'Lying down' && data.movement === 1) {
+        setIsAnomalyDetected(true);
+      } else {
+        setIsAnomalyDetected(false);
+      }
+    });
+
+    // network error handling
+    newSocket.on('connect_error', (err) => {
+      setErrorMessage('Erro: Não foi possível ligar ao servidor. Verifique o IP e o Wi-Fi.');
+      setIsConnecting(false);
+      newSocket.disconnect();
+    });
+
+    setSocket(newSocket);
   };
 
-  // Handle disconnect
+  // disconnect logic
   const handleDisconnect = () => {
-    setConnectionStatus(false);
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
+    }
     setIsConnected(false);
     setIsConnecting(false);
-    clearError('');
-    // Reset anomaly status if connection lost? 
-    // For safety, let's reset it.
+    setErrorMessage('');
     setIsAnomalyDetected(false);
   };
 
-  // Render the UI
+  // interface rendering
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       
       {/* Header */}
@@ -117,17 +110,17 @@ useEffect(() => {
           {isConnecting ? (
             <ActivityIndicator size="small" color="#007AFF" />
           ) : (
-            <Text style={styles.statusText}>{isConnected ? "Connected" : "Disconnected"}</Text>
+            <Text style={styles.statusText}>{isConnected ? "Connected (Wi-Fi)" : "Disconnected"}</Text>
           )}
         </View>
       </View>
 
       {/* Error Message */}
-      {errorMessage && (
+      {errorMessage ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
-      )}
+      ) : null}
 
       {/* Metrics Grid */}
       <View style={styles.content}>
@@ -167,31 +160,31 @@ useEffect(() => {
       </View>
 
       {/* Controls */}
-  <View style={styles.footer}>
-    {!isConnected ? (
-      <View style={styles.buttonContainer}>
-        <Text style={styles.buttonLabel}>Simulate Connection</Text>
-        <Button 
-          onPress={handleConnect} 
-          title={isConnecting ? "Connecting..." : "Connect Device"} 
-          color="#007AFF"
-          disabled={isConnecting}
-        />
+      <View style={styles.footer}>
+        {!isConnected ? (
+          <View style={styles.buttonContainer}>
+            <Text style={styles.buttonLabel}>Simulate Hardware Connection</Text>
+            <Button 
+              onPress={handleConnect} 
+              title={isConnecting ? "Connecting..." : "Connect Device"} 
+              color="#007AFF"
+              disabled={isConnecting}
+            />
+          </View>
+        ) : (
+          <View style={styles.buttonContainer}>
+            <Text style={styles.footerText}>Receiving live data via WebSocket.</Text>
+            <View style={{ marginTop: 10 }}>
+              <Button 
+                onPress={handleDisconnect} 
+                title="Disconnect" 
+                color="#FF3B30"
+              />
+            </View>
+          </View>
+        )}
       </View>
-    ) : (
-      <View style={styles.buttonContainer}>
-        <Text style={styles.footerText}>Device is actively transmitting data.</Text>
-        <View style={{ marginTop: 10 }}>
-          <Button 
-            onPress={handleDisconnect} 
-            title="Disconnect" 
-            color="#FF3B30"
-          />
-        </View>
-      </View>
-    )}
-  </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -201,6 +194,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
     padding: 20,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 20 : 40,
   },
   header: {
     flexDirection: 'row',

@@ -1,106 +1,74 @@
-// Allow editors/linters to skip strict TSX JSX checks when project tsconfig lacks jsx flag
-// @ts-nocheck
-/* @jsxImportSource react */
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   ActivityIndicator,
   Button,
-  SafeAreaView,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
+  Platform,
+  StatusBar
 } from 'react-native';
-import { requestBLEPermissions, startDeviceScan, stopDeviceScan, connectToDevice } from '../services/BleService';
 
-export default function HomeScreen() {
+// 1. A interface para receber a navegação do App.tsx
+interface HomeScreenProps {
+  onNavigateToDashboard: () => void;
+}
+
+// 2. Tipagem simples para o dispositivo simulado
+interface Device {
+  id: string;
+  name: string;
+  signalStrength: number;
+}
+
+export default function HomeScreen({ onNavigateToDashboard }: HomeScreenProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
-  
-  // Scan for 10 seconds
-  const SCAN_DURATION = 10000; // 10 seconds in milliseconds
 
-  // Update devices list in real-time
-  const handleDeviceFound = (device: Device) => {
-    const existingDeviceIndex = devices.findIndex(d => d.id === device.id);
-    
-    if (existingDeviceIndex >= 0) {
-      // Device already exists, update its last seen time
-      const updatedDevices = [...devices];
-      updatedDevices[existingDeviceIndex].lastSeen = Date.now();
-      setDevices(updatedDevices);
-    } else {
-      // New device discovered
-      setDevices(prev => [...prev, {
-        ...device,
-        lastSeen: Date.now(),
-        signalStrength: Math.floor(Math.random() * 100),
-      }]);
-    }
-  };
-
-  // Start scanning for devices
-  const handleScan = async () => {
-    // Request permissions first
-    const permissionGranted = await requestBLEPermissions();
-    
-    if (!permissionGranted) {
-      Alert.alert(
-        'Permissions Denied',
-        'Bluetooth permissions are required to scan for sensors. Please enable them in your device settings.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    // Start scanning
+  // Simula a varredura e encontra o nosso "Sensor IIT"
+  const handleScan = () => {
     setIsScanning(true);
-    setScanStatus('Scanning for sensors...');
-    startDeviceScan(handleDeviceFound);
+    setScanStatus('Scanning for digital twin...');
+    setDevices([]); // Limpa a lista
 
-    // Stop scanning after 10 seconds automatically
+    // Após 1.5 segundos, "encontra" o sensor
     setTimeout(() => {
-      stopDeviceScan();
+      setDevices([
+        {
+          id: '192.168.x.x (Node Server)',
+          name: 'IIT_Sensor_Mock',
+          signalStrength: 98,
+        }
+      ]);
       setIsScanning(false);
       setScanStatus('Scan complete');
-    }, SCAN_DURATION);
+    }, 1500);
   };
 
-  // Connect to a device
+  // Simula a conexão e muda de tela
   const handleConnect = async (deviceId: string) => {
-    if (!deviceId) return;
-    
     setIsConnecting(true);
-    try {
-      const device = await connectToDevice(deviceId);
-      console.log(`Connected to device: ${device.name} (ID: ${device.id})`);
-      Alert.alert('Connected', `Successfully connected to ${device.name}`);
-    } catch (error) {
-      console.error('Connection failed:', error);
-      Alert.alert(
-        'Connection Failed',
-        'Unable to connect to the device. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
+    
+    // Simula um atraso de conexão de 1 segundo
+    setTimeout(() => {
       setIsConnecting(false);
-    }
+      onNavigateToDashboard(); // Vai para o Dashboard!
+    }, 1000);
   };
 
-  // Render a single device item
   const renderDeviceItem = (device: Device) => {
     const isTargetDevice = device.name?.includes('IIT');
     
     return (
-      <View style={styles.deviceCard}>
+      <View style={styles.deviceCard} key={device.id}>
         <View style={styles.deviceHeader}>
           <View style={styles.deviceInfo}>
-            <Text style={styles.deviceName} style={isTargetDevice ? styles.highlightedName : null}>
-              {device.name || 'Unknown Device'}
+            <Text style={[styles.deviceName, isTargetDevice && styles.highlightedName]}>
+              {device.name}
             </Text>
             <Text style={styles.deviceId}>ID: {device.id}</Text>
             {isTargetDevice && (
@@ -109,9 +77,7 @@ export default function HomeScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.signalStrength}>
-            Signal: {device.signalStrength || 'N/A'}%
-          </Text>
+          <Text style={styles.signalStrength}>Signal: {device.signalStrength}%</Text>
         </View>
         <TouchableOpacity
           style={styles.connectButton}
@@ -119,17 +85,15 @@ export default function HomeScreen() {
           disabled={isConnecting}
         >
           <Text style={styles.connectButtonText}>
-            {isConnecting ? 'Connecting...' : 'Connect'}
+            {isConnecting ? 'Connecting...' : 'Connect to Server'}
           </Text>
         </TouchableOpacity>
       </View>
     );
   };
 
-  // Render the UI
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
+    <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Sensor Scanner</Text>
         <View style={styles.scanStatusBadge}>
@@ -144,7 +108,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Scan Button */}
       <View style={styles.buttonContainer}>
         <Button
           onPress={handleScan}
@@ -154,24 +117,22 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Devices List */}
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.devicesList}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
       >
         {devices.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
-              No sensors detected yet. Press "Scan for Sensors" to start scanning.
+              No sensors detected yet. Press "Scan for Sensors" to start.
             </Text>
           </View>
         ) : (
           devices.map(device => renderDeviceItem(device))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -181,6 +142,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
     padding: 15,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 40,
   },
   header: {
     flexDirection: 'row',
@@ -273,8 +235,9 @@ const styles = StyleSheet.create({
   targetBadge: {
     backgroundColor: '#e8f5e9',
     borderRadius: 8,
-    padding: 4 ,
+    padding: 4,
     alignSelf: 'flex-start',
+    marginTop: 4,
   },
   targetText: {
     fontSize: 10,
