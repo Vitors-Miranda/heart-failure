@@ -1,161 +1,163 @@
 // Allow editors/linters to skip strict TSX JSX checks when project tsconfig lacks jsx flag
 // @ts-nocheck
 /* @jsxImportSource react */
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  Button,
-  StyleSheet,
-  StatusBar,
-  Platform
-} from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ActivityIndicator, Button, StyleSheet, StatusBar, Platform, ViewStyle } from 'react-native';
 import { io, Socket } from 'socket.io-client';
+import { useSensorStore } from '../store/useSensorStore';
+import { MetricCard } from '../components/MetricCard';
+import { BiometricMetrics } from '../store/useAppStore';
 
 export default function Dashboard() {
-  const [metrics, setMetrics] = useState<{
-    heartRateBPM: number | null;
-    temperatureCelsius: number | null;
-    movement: number | null;
-    posture: string | null;
-  }>({
-    heartRateBPM: null,
-    temperatureCelsius: null,
-    movement: null,
-    posture: null,
-  });
-  
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [isAnomalyDetected, setIsAnomalyDetected] = useState(false);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const {
+    metrics,
+    isConnected,
+    isAnomalyDetected,
+    setMetrics,
+    setConnectionStatus,
+    setAnomalyDetected,
+    resetStore,
+  } = useSensorStore();
 
-  // cleaning
+  const [socket, setSocket] = React.useState<Socket | null>(null);
+  const [isConnecting, setIsConnecting] = React.useState(false); // Adicione esta linha
+
+  // Clean up socket on unmount
   useEffect(() => {
     return () => {
       if (socket) socket.disconnect();
     };
   }, [socket]);
 
-  // node server connection logic
+  // Socket.io connection logic
   const handleConnect = () => {
-    // reset
-    setMetrics({ heartRateBPM: null, temperatureCelsius: null, movement: null, posture: null });
-    setIsAnomalyDetected(false);
-    setErrorMessage('');
-    setIsConnecting(true);
+    // Reset store state
+    resetStore();
+    setConnectionStatus(false);
+    setIsConnecting(true); 
     
-    // connecting to the IP
-    const newSocket = io('http://10.110.10.57:3000', {
-      transports: ['websocket'], // Força o uso direto de websockets
+    const newSocket = io('http://192.168.1.94:3000', {
+      transports: ['websocket'],
     });
 
-    // successful connection
+    // Successful connection
     newSocket.on('connect', () => {
-      setIsConnected(true);
-      setIsConnecting(false);
-      setErrorMessage('');
+      setConnectionStatus(true);
+      setIsConnecting(false); // Desativa o carregamento
     });
 
-    // packet reception
-    newSocket.on('sensorData', (data) => {
-      setMetrics({
-        heartRateBPM: data.heartRateBPM,
-        temperatureCelsius: data.temperatureCelsius,
-        movement: data.movement,
-        posture: data.posture,
-      });
+    // Packet reception from sensor
+    newSocket.on('sensorData', (data: BiometricMetrics) => {
+      setMetrics(data);
 
-      // anomaly detection logic (simplified for demo purposes)
       if (data.posture === 'Lying down' && data.movement === 1) {
-        setIsAnomalyDetected(true);
+        setAnomalyDetected(true);
       } else {
-        setIsAnomalyDetected(false);
+        setAnomalyDetected(false);
       }
     });
 
-    // network error handling
+    // Network error handling
     newSocket.on('connect_error', (err) => {
-      setErrorMessage('Erro: Não foi possível ligar ao servidor. Verifique o IP e o Wi-Fi.');
-      setIsConnecting(false);
-      newSocket.disconnect();
+      setConnectionStatus(false);
+      setIsConnecting(false); // Desativa o carregamento em caso de erro
+      setSocket(null);
+      // Opcional: Você pode colocar um Alert.alert('Erro', 'Falha ao conectar') aqui
     });
 
     setSocket(newSocket);
   };
 
-  // disconnect logic
+  // Disconnect logic
   const handleDisconnect = () => {
     if (socket) {
       socket.disconnect();
       setSocket(null);
     }
-    setIsConnected(false);
-    setIsConnecting(false);
-    setErrorMessage('');
-    setIsAnomalyDetected(false);
+    setConnectionStatus(false);
   };
 
-  // interface rendering
+  // Format metrics values for display
+  const formatMetric = (value: number | null | undefined): string => {
+    return typeof value === 'number' ? value.toFixed(0) : '--';
+  };
+
+  // Format temperature value
+  const formatTemperature = (value: number | null | undefined): string => {
+    return typeof value === 'number' ? value.toFixed(1) : '--';
+  };
+
+  // Format movement value
+  const formatMovement = (value: number | null | undefined): string => {
+    return typeof value === 'number' ? value.toFixed(1) : '--';
+  };
+
+  // Determine if alert card should show warning
+  const isAlertWarning = isAnomalyDetected;
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Biomedical Monitor</Text>
         <View style={styles.connectionBadge}>
-          {isConnecting ? (
-            <ActivityIndicator size="small" color="#007AFF" />
+          {isConnected ? (
+            <Text style={styles.statusText}>Connected (Wi-Fi)</Text>
           ) : (
-            <Text style={styles.statusText}>{isConnected ? "Connected (Wi-Fi)" : "Disconnected"}</Text>
+            <Text style={styles.statusText}>Disconnected</Text>
           )}
         </View>
       </View>
 
-      {/* Error Message */}
-      {errorMessage ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-        </View>
-      ) : null}
+      {/* Error Message - using errorMessage from store */}
+      {/* Note: Store doesn't have errorMessage, keeping it simple */}
 
       {/* Metrics Grid */}
       <View style={styles.content}>
         {/* Heart Rate Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Heart Rate</Text>
-          <Text style={styles.cardValue}>
-            {metrics.heartRateBPM !== null ? metrics.heartRateBPM.toFixed(0) : '--'} <Text style={{fontSize: 12}}>BPM</Text>
-          </Text>
-          {isAnomalyDetected && metrics.heartRateBPM !== null && (
-             <Text style={styles.warning}>⚠ High</Text>
-          )}
-        </View>
+        <MetricCard
+          label="Heart Rate"
+          value={formatMetric(metrics.heartRateBPM)}
+          unit="BPM"
+          isWarning={isAnomalyDetected && metrics.heartRateBPM !== null}
+        />
 
         {/* Temperature Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Body Temp</Text>
-          <Text style={styles.cardValue}>
-            {metrics.temperatureCelsius !== null ? metrics.temperatureCelsius.toFixed(1) : '--'} <Text style={{fontSize: 12}}>°C</Text>
-          </Text>
-        </View>
+        <MetricCard
+          label="Body Temp"
+          value={formatTemperature(metrics.temperatureCelsius)}
+          unit="°C"
+        />
 
         {/* Movement Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Movement</Text>
-          <Text style={styles.cardValue}>
-            {metrics.movement !== null ? metrics.movement.toFixed(1) : '--'} <Text style={{fontSize: 12}}>Accels</Text>
-          </Text>
-        </View>
-        
+        <MetricCard
+          label="Movement"
+          value={formatMovement(metrics.movement)}
+          unit="Accels"
+        />
+
         {/* Alert Area */}
-        <View style={[styles.alertCard, { backgroundColor: isAnomalyDetected ? '#ffcdd2' : '#e8f5e9' }]}>
-           <Text style={[styles.alertText, { color: isAnomalyDetected ? '#c62828' : '#2e7d32' }]}>
-             {isAnomalyDetected ? "Alert: Possible Fall / Stress" : "Status: Normal"}
-           </Text>
+        <View
+          style={[
+            styles.alertCard,
+            {
+              backgroundColor: isAlertWarning ? '#ffcdd2' : '#e8f5e9',
+              borderColor: isAlertWarning ? '#ffcdd2' : '#e8f5e9',
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.alertText,
+              { color: isAlertWarning ? '#c62828' : '#2e7d32' },
+            ]}
+          >
+            {isAlertWarning
+              ? "Alert: Possible Fall / Stress"
+              : "Status: Normal"}
+          </Text>
         </View>
       </View>
 
@@ -164,9 +166,9 @@ export default function Dashboard() {
         {!isConnected ? (
           <View style={styles.buttonContainer}>
             <Text style={styles.buttonLabel}>Simulate Hardware Connection</Text>
-            <Button 
-              onPress={handleConnect} 
-              title={isConnecting ? "Connecting..." : "Connect Device"} 
+            <Button
+              onPress={handleConnect}
+              title={isConnecting ? "Connecting..." : "Connect Device"}
               color="#007AFF"
               disabled={isConnecting}
             />
@@ -175,9 +177,9 @@ export default function Dashboard() {
           <View style={styles.buttonContainer}>
             <Text style={styles.footerText}>Receiving live data via WebSocket.</Text>
             <View style={{ marginTop: 10 }}>
-              <Button 
-                onPress={handleDisconnect} 
-                title="Disconnect" 
+              <Button
+                onPress={handleDisconnect}
+                title="Disconnect"
                 color="#FF3B30"
               />
             </View>
@@ -255,7 +257,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)'
+    borderColor: 'rgba(0,0,0,0.1)',
   },
   alertText: {
     fontSize: 16,
